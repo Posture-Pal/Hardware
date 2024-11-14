@@ -4,24 +4,15 @@
 #include <Adafruit_BNO055.h>
 #include <PubNub.h> 
 #include <ESP8266WiFi.h>
-
+#include "config.h"
 
 #define DHTPIN 14      
 #define DHTTYPE DHT22    
-
-// PubNub setup
-const char* pubkey = "pub-c-ef699d1a-d6bd-415f-bb21-a5942c7afc1a";
-const char* subkey = "sub-c-90478427-a073-49bc-b402-ba4903894284";
-const char* channel_name = "Posture-Pal";
 
 // create the DHT and BNO055 sensor objects
 DHT dht(DHTPIN, DHTTYPE);
 Adafruit_BNO055 bno = Adafruit_BNO055(55);
 
-
-// wifi credentials
-const char* ssid = "Shinchan";
-const char* password = "jkdgq1234";
 
 void setup() {
   Serial.begin(115200);
@@ -35,7 +26,7 @@ void setup() {
   Serial.println("Connected to Wi-Fi");
 
   // initialize PubNub
-  PubNub.begin(pubkey, subkey);
+  PubNub.begin(PUBKEY, SUBKEY);
 
   // initialize the DHT22 sensor
   dht.begin();
@@ -91,7 +82,7 @@ void loop() {
   String message = "{\"temperature\":" + String(temperature) + ",\"humidity\":" + String(humidity) + ",\"roll\":" + String(roll) + ",\"pitch\":" + String(pitch) + ",\"yaw\":" + String(yaw) + "}";
 
   // publish the message to PubNub
-  auto result = PubNub.publish(channel_name, message.c_str());
+  auto result = PubNub.publish(CHANNEL_NAME, message.c_str());
   
   if (!result) {
     Serial.println("Failed to publish to PubNub.");
