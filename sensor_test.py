@@ -5,46 +5,65 @@ import adafruit_bno055
 import json
 import RPi.GPIO as GPIO  
 
-# Initialize the DHT22 sensor
+# Initialize sensors
 dht_sensor = adafruit_dht.DHT22(board.D4)
-
-# Initialize the BNO055 sensor (I2C)
 i2c = board.I2C()
 bno = adafruit_bno055.BNO055_I2C(i2c)
+
+#TODO Will set these value when user calibrate
+# Hardcoded thresholds
+TEMP_OVERHEAT = 37.5  # Celsius
+TEMP_COLD = 15.0      # Celsius
+HUMID_HIGH = 70.0     # Percent
+HUMID_LOW = 30.0      # Percent
+PITCH_THRESHOLD = 20.0  # Degrees
+GRAVITY_THRESHOLD = [0, 0, 1]  # Expected gravity vector
+
+def check_thresholds(temperature, humidity, pitch, gravity_vector):
+    # Determine temperature status
+    if temperature > TEMP_OVERHEAT:
+        temperature_status = "hot"
+    elif temperature < TEMP_COLD:
+        temperature_status = "cold"
+    else:
+        temperature_status = "normal"
+
+    # Determine humidity status
+    if humidity > HUMID_HIGH:
+        humidity_status = "high"
+    elif humidity < HUMID_LOW:
+        humidity_status = "low"
+    else:
+        humidity_status = "normal"
+
+    # Determine slouch status
+    slouch_detected = abs(pitch) > PITCH_THRESHOLD
+
+    return {
+        "slouch": slouch_detected,
+        "temperature_status": temperature_status,
+        "temperature": temperature,
+        "humidity_status": humidity_status,
+        "humidity": humidity
+    }
 
 def main():
     try:
         while True:
             try:
-                # Read temperature and humidity from DHT22
+                # Read sensor data
                 temperature = dht_sensor.temperature
                 humidity = dht_sensor.humidity
-
-                # Read pitch and gravity vector from BNO055
-                # Extract pitch
-                pitch = bno.euler[1] if bno.euler else None  
-                
+                pitch = bno.euler[1] if bno.euler else None
                 gravity_vector = bno.gravity
 
-                # Check for valid data
-                if temperature is not None and humidity is not None:
-                    print(f"Temperature: {temperature:.2f} C, Humidity: {humidity:.2f} %")
-                else:
-                    print("Failed to read from DHT sensor!")
+                # Validate data
+                if temperature is not None and humidity is not None and pitch is not None:
+                    results = check_thresholds(temperature, humidity, pitch, gravity_vector)
 
-                if pitch is not None and gravity_vector is not None:
-                    print(f"Pitch: {pitch:.2f}, Gravity Vector: {gravity_vector}")
-                else:
-                    print("Failed to read from BNO055 sensor!")
-
-                # Create and print a JSON message
-                message = json.dumps({
-                    "temperature": temperature,
-                    "humidity": humidity,
-                    "pitch": pitch,
-                    "gravity_vector": gravity_vector
-                })
-                print(message)
+                    # Print JSON only when slouch or abnormal conditions detected
+                    if results["slouch"] or results["temperature_status"] != "normal":
+                        print(json.dumps(results))
 
             except RuntimeError as error:
                 print(f"RuntimeError: {error.args[0]}")
