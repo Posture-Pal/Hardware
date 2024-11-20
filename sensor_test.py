@@ -40,9 +40,17 @@ def setup_gpio():
     GPIO.setup(BUZZER_PIN, GPIO.OUT)
     GPIO.setup(VIBRATION_PIN, GPIO.OUT)
 
+def beep(repeat):
+    for _ in range(repeat):
+        for _ in range(60): 
+            GPIO.output(BUZZER_PIN, True)
+            time.sleep(0.001) 
+            GPIO.output(BUZZER_PIN, False)
+            time.sleep(0.001)
+        time.sleep(0.02)  
 
 def turn_on_buzzer():
-    GPIO.output(BUZZER_PIN, GPIO.HIGH)
+    beep(4)
 
 def turn_off_buzzer():
     GPIO.output(BUZZER_PIN, GPIO.LOW)
