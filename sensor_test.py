@@ -18,7 +18,6 @@ bno = adafruit_bno055.BNO055_I2C(i2c)
 VIBRATION_PIN = 23
 BUZZER_PIN = 24
 
-#TODO Will set these value when user calibrate
 # Default thresholds
 DEFAULT_TEMP_OVERHEAT = 37.5  # Celsius
 DEFAULT_TEMP_COLD = 15.0      # Celsius
@@ -78,24 +77,6 @@ def turn_on_vibration():
 def turn_off_vibration():
     GPIO.output(VIBRATION_PIN, GPIO.LOW)
 
-def get_user_modes():
-    global sound_mode, vibration_mode
-
-    # Prompt user for modes, defaulting to True if they input nothing
-    sound_input = input("Do you want to enable sound? (yes/no): ").strip().lower()
-    if sound_input == "yes":
-        sound_mode = True
-    elif sound_input == "no":
-        sound_mode = False
-
-    vibration_input = input("Do you want to enable vibration? (yes/no): ").strip().lower()
-    if vibration_input == "yes":
-        vibration_mode = True
-    elif vibration_input == "no":
-        vibration_mode = False
-
-    print(f"Sound Mode: {sound_mode}, Vibration Mode: {vibration_mode}")
-
 def calibrate_posture():
     print("Calibrating upright posture...")
     pitch = bno.euler[1] if bno.euler else None
@@ -138,16 +119,13 @@ def check_environment_status(temperature, humidity):
 
 
 def monitor_posture():
-    """Monitors posture and environment, reacting to system states."""
     global monitoring_active
     try:
         while True:
-            # Skip sensor checks if monitoring is inactive
             if not monitoring_active:
                 time.sleep(0.5)
                 continue
 
-            # Read and validate sensor data
             temperature = dht_sensor.temperature
             humidity = dht_sensor.humidity
             pitch = bno.euler[1] if bno.euler else None
@@ -157,11 +135,9 @@ def monitor_posture():
                 print("Sensor data not available!")
                 continue
 
-            # Check environmental and posture status
             temperature_status, humidity_status = check_environment_status(temperature, humidity)
             slouch_detected = check_slouch(pitch, gravity_vector)
-
-            # React to posture/environmental status
+   
             if slouch_detected:
                 if sound_mode:
                     turn_on_buzzer()
@@ -171,16 +147,18 @@ def monitor_posture():
                 turn_off_buzzer()
                 turn_off_vibration()
 
-            # Publish status updates if needed
             if slouch_detected or temperature_status != "normal" or humidity_status != "normal":
                 result = {
                     "slouch": slouch_detected,
                     "temperature_status": temperature_status,
                     "temperature": temperature,
                     "humidity_status": humidity_status,
-                    "humidity": humidity
+                    "humidity": humidity, 
+                    "pitch": pitch,
+                    "gravity_vector": gravity_vector
                 }
                 print(json.dumps(result, indent=2))
+                print()
                 publish_message(result)
 
             time.sleep(0.5)
@@ -196,7 +174,6 @@ def publish_message(message):
     print(f"Published: {message}")
 
 def handle_pubnub_message(message):
-    """Processes messages from PubNub to update system states."""
     global sound_mode, vibration_mode, monitoring_active
 
     try:
@@ -233,7 +210,7 @@ def handle_pubnub_message(message):
 
     except Exception as e:
         print(f"Error processing message: {e}")
-        monitoring_active = True # Default to keeping monitoring active
+        monitoring_active = True
         return False
 
 
