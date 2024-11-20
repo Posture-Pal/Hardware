@@ -20,33 +20,34 @@ def main():
                 temperature = dht_sensor.temperature
                 humidity = dht_sensor.humidity
 
-                # Read orientation data from BNO055
-                roll, pitch, yaw = bno.euler
+                # Read pitch and gravity vector from BNO055
+                # Extract pitch
+                pitch = bno.euler[1] if bno.euler else None  
+                
+                gravity_vector = bno.gravity
 
                 # Check for valid data
-                if temperature is None or humidity is None:
-                    print("Failed to read from DHT sensor!")
-                else:
+                if temperature is not None and humidity is not None:
                     print(f"Temperature: {temperature:.2f} C, Humidity: {humidity:.2f} %")
-
-                if roll is None or pitch is None or yaw is None:
-                    print("Failed to read from BNO055 sensor!")
                 else:
-                    print(f"Orientation - Roll: {roll:.2f}, Pitch: {pitch:.2f}, Yaw: {yaw:.2f}")
+                    print("Failed to read from DHT sensor!")
 
+                if pitch is not None and gravity_vector is not None:
+                    print(f"Pitch: {pitch:.2f}, Gravity Vector: {gravity_vector}")
+                else:
+                    print("Failed to read from BNO055 sensor!")
+
+                # Create and print a JSON message
                 message = json.dumps({
                     "temperature": temperature,
                     "humidity": humidity,
-                    "roll": roll,
                     "pitch": pitch,
-                    "yaw": yaw
+                    "gravity_vector": gravity_vector
                 })
-
                 print(message)
 
-
             except RuntimeError as error:
-                print(error.args[0])
+                print(f"RuntimeError: {error.args[0]}")
 
             time.sleep(0.5)
 
