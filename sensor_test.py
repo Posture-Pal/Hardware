@@ -4,6 +4,11 @@ import adafruit_dht
 import adafruit_bno055
 import json
 import RPi.GPIO as GPIO  
+from pubnub.pnconfiguration import PNConfiguration
+from pubnub.pubnub import PubNub
+from pubnub.callbacks import SubscribeCallback 
+import uuid
+import threading
 
 # Initialize sensors
 dht_sensor = adafruit_dht.DHT22(board.D4)
@@ -34,6 +39,18 @@ thresholds = {
 # Modes (default to True)
 sound_mode = True
 vibration_mode = True
+
+monitoring_active = False 
+
+# PubNub Configuration
+pnconfig = PNConfiguration()
+pnconfig.subscribe_key = "sub-c-90478427-a073-49bc-b402-ba4903894284"
+pnconfig.publish_key = "pub-c-ef699d1a-d6bd-415f-bb21-a5942c7afc1a"
+pnconfig.ssl = False
+pnconfig.uuid = str(uuid.uuid4())
+pubnub = PubNub(pnconfig)
+
+CHANNEL = "Posture-Pal"
 
 def setup_gpio():
     GPIO.setmode(GPIO.BCM)
@@ -91,8 +108,8 @@ def calibrate_posture():
     thresholds["pitch"] = pitch
     thresholds["gravity"] = gravity_vector
 
-    print("Calibration complete. Sending threshold data:")
-    print(json.dumps(thresholds, indent=2))
+    # print("Calibration complete. Sending threshold data:")
+    # print(json.dumps(thresholds, indent=2))
 
 def check_slouch(pitch, gravity_vector):
     pitch_diff = abs(pitch - thresholds["pitch"])
@@ -119,22 +136,32 @@ def check_environment_status(temperature, humidity):
 
     return temperature_status, humidity_status
 
+
 def monitor_posture():
+    """Monitors posture and environment, reacting to system states."""
+    global monitoring_active
     try:
         while True:
+            # Skip sensor checks if monitoring is inactive
+            if not monitoring_active:
+                time.sleep(0.5)
+                continue
+
+            # Read and validate sensor data
             temperature = dht_sensor.temperature
             humidity = dht_sensor.humidity
             pitch = bno.euler[1] if bno.euler else None
             gravity_vector = bno.gravity
 
-            if temperature is None or humidity is None or pitch is None or gravity_vector is None:
+            if any(data is None for data in [temperature, humidity, pitch, gravity_vector]):
                 print("Sensor data not available!")
                 continue
 
+            # Check environmental and posture status
             temperature_status, humidity_status = check_environment_status(temperature, humidity)
             slouch_detected = check_slouch(pitch, gravity_vector)
 
-            # Controlling buzzer and vibration motor based on slouch detection and modes
+            # React to posture/environmental status
             if slouch_detected:
                 if sound_mode:
                     turn_on_buzzer()
@@ -144,6 +171,7 @@ def monitor_posture():
                 turn_off_buzzer()
                 turn_off_vibration()
 
+            # Publish status updates if needed
             if slouch_detected or temperature_status != "normal" or humidity_status != "normal":
                 result = {
                     "slouch": slouch_detected,
@@ -153,27 +181,79 @@ def monitor_posture():
                     "humidity": humidity
                 }
                 print(json.dumps(result, indent=2))
+                publish_message(result)
+
             time.sleep(0.5)
+
     except RuntimeError as error:
         print(f"RuntimeError: {error.args[0]}")
     finally:
         GPIO.cleanup()
 
 
-#TODO : will change it to get data from pubnub channel
+def publish_message(message):
+    pubnub.publish().channel(CHANNEL).message(message).sync()
+    print(f"Published: {message}")
+
+def handle_pubnub_message(message):
+    """Processes messages from PubNub to update system states."""
+    global sound_mode, vibration_mode, monitoring_active
+
+    try:
+        if "power" in message:
+            if message["power"]:
+                print("Power ON received. Starting monitoring.")
+                publish_message({"msg": "You are in calibration stage"})
+                if not monitoring_active:
+                    monitoring_active = True
+                    threading.Thread(target=monitor_posture, daemon=True).start()
+            else:
+                print("Power OFF received. Stopping monitoring.")
+                publish_message({"msg": "Monitoring stopped"})
+                turn_off_buzzer()
+                turn_off_vibration()
+                GPIO.cleanup()
+                monitoring_active = False  # Stop monitoring
+
+        if "calibration_setup" in message:
+            if message["calibration_setup"]:
+                print("Calibrating posture...")
+                calibrate_posture()
+                publish_message({"msg": "Calibration complete", "thresholds": thresholds})
+            else:
+                print("Using default calibration values...")
+                publish_message({"msg": "Default thresholds in use", "thresholds": thresholds})
+
+        if "sound_mode" in message and "vibration_mode" in message:
+            sound_mode = message["sound_mode"]
+            vibration_mode = message["vibration_mode"]
+            print(f"Updated modes: Sound = {sound_mode}, Vibration = {vibration_mode}")
+
+        return True
+
+    except Exception as e:
+        print(f"Error processing message: {e}")
+        monitoring_active = True # Default to keeping monitoring active
+        return False
+
+
+class PostureListener(SubscribeCallback):
+    def message(self, pubnub, message):
+        global monitoring_active
+        print(f"Received message: {message.message}")
+        monitoring_active = handle_pubnub_message(message.message)
+
+
+def start_pubnub_listener():
+    listener = PostureListener()
+    pubnub.add_listener(listener)
+    pubnub.subscribe().channels(CHANNEL).execute()
+
+
 def main():
-    print("Do you want to calibrate your upright posture? (yes/no)")
-    response = input().strip().lower()
-
-    if response == "yes":
-        calibrate_posture()
-    else:
-        print("Using default thresholds.")
-
-    get_user_modes()
-    print("Starting posture and environment monitoring...")
-    monitor_posture()
+    setup_gpio()
+    print("Waiting for power-on message...")
+    start_pubnub_listener()
 
 if __name__ == "__main__":
-    setup_gpio()
     main()
