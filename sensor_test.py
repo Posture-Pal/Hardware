@@ -10,6 +10,9 @@ dht_sensor = adafruit_dht.DHT22(board.D4)
 i2c = board.I2C()
 bno = adafruit_bno055.BNO055_I2C(i2c)
 
+VIBRATION_PIN = 23
+BUZZER_PIN = 24
+
 #TODO Will set these value when user calibrate
 # Default thresholds
 DEFAULT_TEMP_OVERHEAT = 37.5  # Celsius
@@ -27,6 +30,46 @@ thresholds = {
     "pitch": DEFAULT_PITCH,
     "gravity": DEFAULT_GRAVITY
 }
+
+# Modes (default to True)
+sound_mode = True
+vibration_mode = True
+
+def setup_gpio():
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(BUZZER_PIN, GPIO.OUT)
+    GPIO.setup(VIBRATION_PIN, GPIO.OUT)
+
+
+def turn_on_buzzer():
+    GPIO.output(BUZZER_PIN, GPIO.HIGH)
+
+def turn_off_buzzer():
+    GPIO.output(BUZZER_PIN, GPIO.LOW)
+
+def turn_on_vibration():
+    GPIO.output(VIBRATION_PIN, GPIO.HIGH)
+
+def turn_off_vibration():
+    GPIO.output(VIBRATION_PIN, GPIO.LOW)
+
+def get_user_modes():
+    global sound_mode, vibration_mode
+
+    # Prompt user for modes, defaulting to True if they input nothing
+    sound_input = input("Do you want to enable sound? (yes/no): ").strip().lower()
+    if sound_input == "yes":
+        sound_mode = True
+    elif sound_input == "no":
+        sound_mode = False
+
+    vibration_input = input("Do you want to enable vibration? (yes/no): ").strip().lower()
+    if vibration_input == "yes":
+        vibration_mode = True
+    elif vibration_input == "no":
+        vibration_mode = False
+
+    print(f"Sound Mode: {sound_mode}, Vibration Mode: {vibration_mode}")
 
 def calibrate_posture():
     print("Calibrating upright posture...")
@@ -83,6 +126,16 @@ def monitor_posture():
             temperature_status, humidity_status = check_environment_status(temperature, humidity)
             slouch_detected = check_slouch(pitch, gravity_vector)
 
+            # Controlling buzzer and vibration motor based on slouch detection and modes
+            if slouch_detected:
+                if sound_mode:
+                    turn_on_buzzer()
+                if vibration_mode:
+                    turn_on_vibration()
+            else:
+                turn_off_buzzer()
+                turn_off_vibration()
+
             if slouch_detected or temperature_status != "normal" or humidity_status != "normal":
                 result = {
                     "slouch": slouch_detected,
@@ -109,8 +162,10 @@ def main():
     else:
         print("Using default thresholds.")
 
+    get_user_modes()
     print("Starting posture and environment monitoring...")
     monitor_posture()
 
 if __name__ == "__main__":
+    setup_gpio()
     main()
